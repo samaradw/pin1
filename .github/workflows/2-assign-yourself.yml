@@ -1,0 +1,62 @@
+name: Step 2, Write Effective Release Notes
+
+on:
+  push:
+    paths:
+      - 'RELEASE_TEMPLATE.md'
+
+permissions:
+  contents: write
+
+jobs:
+  get_current_step:
+    name: Check current step number
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - id: get_step
+        run: |
+          echo "current_step=$(cat ./.github/steps/-step.txt)" >> $GITHUB_OUTPUT
+    outputs:
+      current_step: ${{ steps.get_step.outputs.current_step }}
+
+  on_template_created:
+    name: On template created
+    needs: get_current_step
+    if: ${{ !github.event.repository.is_template && needs.get_current_step.outputs.current_step == 2 }}
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Add new feature to sample app
+        run: |
+          cat >> src/app.js << 'EOF'
+          
+          // New feature added for v1.1.0
+          function power(a, b) {
+            return Math.pow(a, b);
+          }
+          
+          // Export the new function
+          module.exports.power = power;
+          EOF
+          
+          git config user.name github-actions[bot]
+          git config user.email github-actions[bot]@users.noreply.github.com
+          git add src/app.js
+          git commit -m "Add power function for v1.1.0 release"
+          git push origin main
+
+      - name: Update to step 3
+        uses: skills/action-update-step@v2
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          from_step: 2
+          to_step: 3
+
+

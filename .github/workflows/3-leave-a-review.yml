@@ -1,0 +1,93 @@
+name: Step 3, Attach Assets to Releases
+
+on:
+  release:
+    types: [published]  # Trigger on release being published
+  workflow_dispatch:  # Manual trigger
+
+permissions:
+  contents: write
+
+jobs:
+  get_current_step:
+    name: Check current step number
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - id: get_step
+        run: |
+          echo "current_step=$(cat ./.github/steps/-step.txt)" >> $GITHUB_OUTPUT
+    outputs:
+      current_step: ${{ steps.get_step.outputs.current_step }}
+
+  on_assets_attached:
+    name: On assets attached
+    needs: get_current_step
+    if: >-
+      ${{ !github.event.repository.is_template
+          && needs.get_current_step.outputs.current_step == 3
+          && (github.event_name == 'release' && github.event.release.assets_url != null) }}
+
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Add workflow file for automated releases
+        run: |
+          mkdir -p .github/workflows
+          cat > .github/workflows/release-automation.yml << 'EOF'
+          name: Create Release Draft
+
+          on:
+            push:
+              tags:
+                - 'v*'
+
+          jobs:
+            build:
+              name: Create Release
+              runs-on: ubuntu-latest
+              steps:
+                - name: Checkout code
+                  uses: actions/checkout@v4
+                  
+                - name: Generate changelog
+                  id: changelog
+                  uses: metcalfc/changelog-generator@v4.0.1
+                  with:
+                    myToken: ${{ secrets.GITHUB_TOKEN }}
+                    
+                - name: Create Release
+                  id: create_release
+                  uses: actions/create-release@v1
+                  env:
+                    GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+                  with:
+                    tag_name: ${{ github.ref }}
+                    release_name: Release ${{ github.ref }}
+                    body: |
+                      ## What's Changed
+                      ${{ steps.changelog.outputs.changelog }}
+                    draft: true
+                    prerelease: false
+          EOF
+          
+          git config user.name github-actions[bot]
+          git config user.email github-actions[bot]@users.noreply.github.com
+          git add .github/workflows/release-automation.yml
+          git commit -m "Add release automation workflow"
+          git push origin main
+
+      - name: Update to step X
+        uses: skills/action-update-step@v2
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          from_step: 3
+          to_step: X
+
+
